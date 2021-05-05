@@ -63,6 +63,8 @@ program
   .command("up")
   .description("run all pending database migrations")
   .option("-f --file <file>", "use a custom config file")
+  .option("-t --target <fileName>", "run all pending database migrations until a specific target")
+  .option("-n --next", "run only next database migration")
   .action(options => {
     global.options = options;
     migrateMongo.database
@@ -83,6 +85,7 @@ program
   .description("undo the last applied database migration")
   .option("-f --file <file>", "use a custom config file")
   .option("-b --block", "rollback all scripts from the same migration block")
+  .option("-t --target <fileName>", "undo all database migrations until a specific target (target is not rolledback)")
   .action(options => {
     global.options = options;
     migrateMongo.database

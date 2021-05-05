@@ -110,6 +110,8 @@ describe("status", () => {
   }
 
   beforeEach(() => {
+    global.options = {};
+
     changelogCollection = mockChangelogCollection();
 
     migrationsDir = mockMigrationsDir();

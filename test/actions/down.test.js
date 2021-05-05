@@ -21,12 +21,16 @@ describe("down", () => {
           appliedAt: new Date(),
         },
         {
-          fileName: "20160609113224-second_migration.js",
+          fileName: "20160609113225-second_migration.js",
+          appliedAt: new Date(),
+        },
+        {
+          fileName: "20160609113226-third_migration.js",
           appliedAt: new Date(),
           migrationBlock: 1
         },
         {
-          fileName: "20160609113225-last_migration.js",
+          fileName: "20160609113227-last_migration.js",
           appliedAt: new Date(),
           migrationBlock: 1
         }
@@ -81,6 +85,8 @@ describe("down", () => {
   }
 
   beforeEach(() => {
+    global.options = {};
+    
     migration = mockMigration();
     changelogCollection = mockChangelogCollection();
 
@@ -111,7 +117,7 @@ describe("down", () => {
   it("should load the last applied migration", async () => {
     await down(db);
     expect(migrationsDir.loadMigration.getCall(0).args[0]).to.equal(
-      "20160609113225-last_migration.js"
+      "20160609113227-last_migration.js"
     );
   });
 
@@ -157,7 +163,7 @@ describe("down", () => {
       expect.fail("Error was not thrown");
     } catch (err) {
       expect(err.message).to.equal(
-        "Could not migrate down 20160609113225-last_migration.js: Invalid syntax"
+        "Could not migrate down 20160609113227-last_migration.js: Invalid syntax"
       );
     }
   });
@@ -183,12 +189,52 @@ describe("down", () => {
 
   it("should yield a list of downgraded items", async () => {
     const items = await down(db);
-    expect(items).to.deep.equal(["20160609113225-last_migration.js"]);
+    expect(items).to.deep.equal(["20160609113227-last_migration.js"]);
   });
 
   it("should rollback last migrations scripts of a same migration block", async () => {
     global.options = { block: true };
     const items = await down(db);
-    expect(items).to.deep.equal(["20160609113225-last_migration.js", "20160609113224-second_migration.js"]);
+    expect(items).to.deep.equal([
+      "20160609113227-last_migration.js",
+      "20160609113226-third_migration.js"
+    ]);
+  });
+
+  it("should yield an error if both block and target options are requested", async () => {
+    global.options = { block: true, target: "20160609113223-any-migration.js" };
+
+    try  {
+      await down(db);
+      expect.fail('Should have thrown an error');
+    } catch (err) {
+      expect(err.message).to.equal(
+        "Options -b (--block) and -t (--target) are incompatible. You must choose either one OR the other."
+      );
+    }
+  });
+
+  it("should yield an error if targeted file name is not part of migrations to rollback", async () => {
+    global.options = { target: "20160609113223-any-migration.js" };
+
+    try  {
+      await down(db);
+      expect.fail('Should have thrown an error');
+    } catch (err) {
+      expect(err.message).to.equal(
+        "File 20160609113223-any-migration.js is not part of the already migrated files"
+      );
+    }
+  });
+
+  it("should rollback each migration script until the targeted one (excluded)", async () => {
+    global.options = { target: "20160609113224-first_migration.js" };
+
+    const items = await down(db);
+    expect(items).to.deep.equal([
+      "20160609113227-last_migration.js",
+      "20160609113226-third_migration.js",
+      "20160609113225-second_migration.js"
+    ]);
   });
 });
