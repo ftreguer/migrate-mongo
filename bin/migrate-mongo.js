@@ -18,8 +18,7 @@ function handleError(err) {
 }
 
 function printStatusTable(statusItems) {
-  return migrateMongo.config.read().then(config => {
-    const useFileHash = config.useFileHash === true;
+  return migrateMongo.config.read().then(({ useFileHash }) => {
     const table = new Table({ head: useFileHash ? ["Filename", "Hash", "Applied At", "Migration block"] : ["Filename", "Applied At", "Migration block"]});
     statusItems.forEach(item => table.push(_.values(item)));
     console.log(table.toString());

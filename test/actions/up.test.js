@@ -21,32 +21,39 @@ describe("up", () => {
       Promise.resolve([
         {
           fileName: "20160605123224-first_applied_migration.js",
-          appliedAt: new Date()
+          appliedAt: new Date(),
+          fileHash: 'appliedHash1'
         },
         {
           fileName: "20160606093207-second_applied_migration.js",
-          appliedAt: new Date()
+          appliedAt: new Date(),
+          fileHash: 'appliedHash2'
         },
         {
           fileName: "20160607173840-first_pending_migration.js",
-          appliedAt: "PENDING"
+          appliedAt: "PENDING",
+          fileHash: 'pendingHash1'
         },
         {
           fileName: "20160608060209-second_pending_migration.js",
+          appliedAt: "PENDING",
+          fileHash: 'pendingHash2'
         },
         {
           fileName: "20160609173445-third_pending_migration.js",
           appliedAt: "PENDING",
+          fileHash: 'pendingHash3'
         }
       ])
     );
   }
 
-  function mockConfig() {
+  function mockConfig({ useFileHash = false } = {}) {
     return {
       shouldExist: sinon.stub().returns(Promise.resolve()),
       read: sinon.stub().returns({
-        changelogCollectionName: "changelog"
+        changelogCollectionName: "changelog",
+        useFileHash
       })
     };
   }
@@ -178,6 +185,27 @@ describe("up", () => {
       appliedAt: new Date("2016-06-09T08:07:00.077Z"),
       fileName: "20160607173840-first_pending_migration.js",
       migrationBlock: 1465459620077
+    });
+    clock.restore();
+  });
+
+  it("should populate the changelog with info about the upgraded migrations, using file hash", async () => {
+    const clock = sinon.useFakeTimers(
+      new Date("2016-06-09T08:07:00.077Z").getTime()
+    );
+
+    config = mockConfig({ useFileHash: true })
+    up = loadUpWithInjectedMocks();
+
+    await up(db);
+
+    expect(changelogCollection.insertOne.called).to.equal(true);
+    expect(changelogCollection.insertOne.callCount).to.equal(3);
+    expect(changelogCollection.insertOne.getCall(0).args[0]).to.deep.equal({
+      appliedAt: new Date("2016-06-09T08:07:00.077Z"),
+      fileName: "20160607173840-first_pending_migration.js",
+      migrationBlock: 1465459620077,
+      fileHash: "pendingHash1"
     });
     clock.restore();
   });
