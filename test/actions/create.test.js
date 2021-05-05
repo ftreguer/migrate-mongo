@@ -31,6 +31,8 @@ describe("create", () => {
   }
 
   beforeEach(() => {
+    global.options = {};
+
     migrationsDir = mockMigrationsDir();
     config = mockConfig();
     fs = mockFs();

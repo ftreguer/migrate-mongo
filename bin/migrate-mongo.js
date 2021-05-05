@@ -18,8 +18,7 @@ function handleError(err) {
 }
 
 function printStatusTable(statusItems) {
-  return migrateMongo.config.read().then(config => {
-    const useFileHash = config.useFileHash === true;
+  return migrateMongo.config.read().then(({ useFileHash }) => {
     const table = new Table({ head: useFileHash ? ["Filename", "Hash", "Applied At", "Migration block"] : ["Filename", "Applied At", "Migration block"]});
     statusItems.forEach(item => table.push(_.values(item)));
     console.log(table.toString());
@@ -63,6 +62,8 @@ program
   .command("up")
   .description("run all pending database migrations")
   .option("-f --file <file>", "use a custom config file")
+  .option("-t --target <fileName>", "run all pending database migrations until a specific target")
+  .option("-n --next", "run only next database migration")
   .action(options => {
     global.options = options;
     migrateMongo.database
@@ -83,6 +84,7 @@ program
   .description("undo the last applied database migration")
   .option("-f --file <file>", "use a custom config file")
   .option("-b --block", "rollback all scripts from the same migration block")
+  .option("-t --target <fileName>", "undo all database migrations until a specific target (target is not rolledback)")
   .action(options => {
     global.options = options;
     migrateMongo.database

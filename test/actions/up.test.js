@@ -13,6 +13,7 @@ describe("up", () => {
 
   let firstPendingMigration;
   let secondPendingMigration;
+  let thirdPendingMigration;
   let changelogCollection;
 
   function mockStatus() {
@@ -20,29 +21,39 @@ describe("up", () => {
       Promise.resolve([
         {
           fileName: "20160605123224-first_applied_migration.js",
-          appliedAt: new Date()
+          appliedAt: new Date(),
+          fileHash: 'appliedHash1'
         },
         {
           fileName: "20160606093207-second_applied_migration.js",
-          appliedAt: new Date()
+          appliedAt: new Date(),
+          fileHash: 'appliedHash2'
         },
         {
           fileName: "20160607173840-first_pending_migration.js",
-          appliedAt: "PENDING"
+          appliedAt: "PENDING",
+          fileHash: 'pendingHash1'
         },
         {
           fileName: "20160608060209-second_pending_migration.js",
-          appliedAt: "PENDING"
+          appliedAt: "PENDING",
+          fileHash: 'pendingHash2'
+        },
+        {
+          fileName: "20160609173445-third_pending_migration.js",
+          appliedAt: "PENDING",
+          fileHash: 'pendingHash3'
         }
       ])
     );
   }
 
-  function mockConfig() {
+  function mockConfig({ useFileHash = false } = {}) {
     return {
       shouldExist: sinon.stub().returns(Promise.resolve()),
       read: sinon.stub().returns({
-        changelogCollectionName: "changelog"
+        changelogCollectionName: "changelog",
+        useFileHash
       })
     };
   }
@@ -56,6 +67,9 @@ describe("up", () => {
     mock.loadMigration
       .withArgs("20160608060209-second_pending_migration.js")
       .returns(Promise.resolve(secondPendingMigration));
+    mock.loadMigration
+      .withArgs("20160609173445-third_pending_migration.js")
+      .returns(Promise.resolve(thirdPendingMigration));
     return mock;
   }
 
@@ -93,8 +107,11 @@ describe("up", () => {
   }
 
   beforeEach(() => {
+    global.options = {};
+    
     firstPendingMigration = mockMigration();
     secondPendingMigration = mockMigration();
+    thirdPendingMigration = mockMigration();
     changelogCollection = mockChangelogCollection();
 
     status = mockStatus();
@@ -114,12 +131,15 @@ describe("up", () => {
   it("should load all the pending migrations", async () => {
     await up(db);
     expect(migrationsDir.loadMigration.called).to.equal(true);
-    expect(migrationsDir.loadMigration.callCount).to.equal(2);
+    expect(migrationsDir.loadMigration.callCount).to.equal(3);
     expect(migrationsDir.loadMigration.getCall(0).args[0]).to.equal(
       "20160607173840-first_pending_migration.js"
     );
     expect(migrationsDir.loadMigration.getCall(1).args[0]).to.equal(
       "20160608060209-second_pending_migration.js"
+    );
+    expect(migrationsDir.loadMigration.getCall(2).args[0]).to.equal(
+      "20160609173445-third_pending_migration.js"
     );
   });
 
@@ -127,7 +147,8 @@ describe("up", () => {
     await up(db);
     expect(firstPendingMigration.up.called).to.equal(true);
     expect(secondPendingMigration.up.called).to.equal(true);
-    sinon.assert.callOrder(firstPendingMigration.up, secondPendingMigration.up);
+    expect(thirdPendingMigration.up.called).to.equal(true);
+    sinon.assert.callOrder(firstPendingMigration.up, secondPendingMigration.up, thirdPendingMigration.up);
   });
 
   it("should be able to upgrade callback based migration that has both the `db` and `client` args", async () => {
@@ -159,7 +180,7 @@ describe("up", () => {
     await up(db);
 
     expect(changelogCollection.insertOne.called).to.equal(true);
-    expect(changelogCollection.insertOne.callCount).to.equal(2);
+    expect(changelogCollection.insertOne.callCount).to.equal(3);
     expect(changelogCollection.insertOne.getCall(0).args[0]).to.deep.equal({
       appliedAt: new Date("2016-06-09T08:07:00.077Z"),
       fileName: "20160607173840-first_pending_migration.js",
@@ -168,11 +189,33 @@ describe("up", () => {
     clock.restore();
   });
 
+  it("should populate the changelog with info about the upgraded migrations, using file hash", async () => {
+    const clock = sinon.useFakeTimers(
+      new Date("2016-06-09T08:07:00.077Z").getTime()
+    );
+
+    config = mockConfig({ useFileHash: true })
+    up = loadUpWithInjectedMocks();
+
+    await up(db);
+
+    expect(changelogCollection.insertOne.called).to.equal(true);
+    expect(changelogCollection.insertOne.callCount).to.equal(3);
+    expect(changelogCollection.insertOne.getCall(0).args[0]).to.deep.equal({
+      appliedAt: new Date("2016-06-09T08:07:00.077Z"),
+      fileName: "20160607173840-first_pending_migration.js",
+      migrationBlock: 1465459620077,
+      fileHash: "pendingHash1"
+    });
+    clock.restore();
+  });
+
   it("should yield a list of upgraded migration file names", async () => {
     const upgradedFileNames = await up(db);
     expect(upgradedFileNames).to.deep.equal([
       "20160607173840-first_pending_migration.js",
-      "20160608060209-second_pending_migration.js"
+      "20160608060209-second_pending_migration.js",
+      "20160609173445-third_pending_migration.js"
     ]);
   });
 
@@ -200,5 +243,48 @@ describe("up", () => {
         "Could not update changelog: Kernel panic"
       );
     }
+  });
+
+  it("should yield an error if both block and target options are requested", async () => {
+    global.options = { next: true, target: "20190927150918-any_migration.js" };
+
+    try  {
+      await up(db);
+      expect.fail('Should have thrown an error');
+    } catch (err) {
+      expect(err.message).to.equal(
+        "Options -n (--next) and -t (--target) are incompatible. You must choose either one OR the other."
+      );
+    }
+  });
+
+  it("should yield an error if targeted file name is not part of the pending migrations", async () => {
+    global.options = { target: "20190927150918-any-migration.js" };
+
+    try  {
+      await up(db);
+      expect.fail('Should have thrown an error');
+    } catch (err) {
+      expect(err.message).to.equal(
+        "File 20190927150918-any-migration.js is not part of the pending migrations"
+      );
+    }
+  });
+
+  it("should migrate only next pending migration", async () => {
+    global.options = { next: true };
+
+    const items = await up(db);
+    expect(items).to.deep.equal(["20160607173840-first_pending_migration.js"]);
+  });
+
+  it("should migrate each pending migration until the targeted one (included)", async () => {
+    global.options = { target: "20160608060209-second_pending_migration.js" };
+    
+    const items = await up(db);
+    expect(items).to.deep.equal([
+      "20160607173840-first_pending_migration.js",
+      "20160608060209-second_pending_migration.js"
+    ]);
   });
 });
